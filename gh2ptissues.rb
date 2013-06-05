@@ -22,7 +22,7 @@ require 'json'
 # puts ENV['GITHUB_PASSWORD']
 # puts ENV['PIVOTAL_TOKEN']
 
-dry_run = false
+dry_run = true
 
 begin
 
@@ -32,12 +32,6 @@ begin
   pivotal_project = nil
 
   pivotal_project = PivotalTracker::Project.find(PIVOTAL_PROJECT_ID)
-
-  # PivotalTracker::Project.all.each do |p|
-  #   pivotal_project = p if p.id == PIVOTAL_PROJECT_ID.to_i
-  #   puts "#{p.id}, #{PIVOTAL_PROJECT_ID}" if p.id == PIVOTAL_PROJECT_ID.to_i
-  #   break
-  # end
 
   github = Octokit::Client.new(:login => GITHUB_LOGIN, :password => GITHUB_PASSWORD)
 
