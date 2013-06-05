@@ -6,71 +6,101 @@ GITHUB_ORG = 'APX'
 GITHUB_USER = 'shyam-habarakada'
 GITHUB_REPO = 'APX/benchpress-server'
 GITHUB_LOGIN = 'shyam-habarakada'
-PIVOTAL_PROJECT_ID = '836893'
+PIVOTAL_PROJECT_ID = 836893
+PIVOTAL_PROJECT_USE_SSL = true
 
 GITHUB_PASSWORD = ENV['GITHUB_PASSWORD']
-PIVOTAL_TOKEN = ENV['PIVOTAL_TOKEN']
+PIVOTAL_TOKEN = ENV['PIVOTAL_TOKEN'].to_s unless ENV['PIVOTAL_TOKEN'].nil?
 
 require 'rubygems'
 require 'octokit'
 require 'pivotal-tracker'
+require 'json'
 
-puts ENV['GITHUB_PASSWORD']
-puts ENV['PIVOTAL_TOKEN']
+# uncomment to debug
+# require 'net-http-spy'
+# puts ENV['GITHUB_PASSWORD']
+# puts ENV['PIVOTAL_TOKEN']
 
-PivotalTracker::Client.token = PIVOTAL_TOKEN
+dry_run = false
 
-total_issues = 0 # how many issues were processed?
+begin
 
-github = Octokit::Client.new(:login => GITHUB_LOGIN, :password => GITHUB_PASSWORD)
+  PivotalTracker::Client.token = PIVOTAL_TOKEN
+  PivotalTracker::Client.use_ssl = PIVOTAL_PROJECT_USE_SSL
 
-issues_filter = 'bug'
+  pivotal_project = nil
 
-page_issues = 1
-issues = github.list_issues(GITHUB_REPO, { :page => page_issues, :labels => issues_filter } )
+  pivotal_project = PivotalTracker::Project.find(PIVOTAL_PROJECT_ID)
 
-while issues.count > 0
+  # PivotalTracker::Project.all.each do |p|
+  #   pivotal_project = p if p.id == PIVOTAL_PROJECT_ID.to_i
+  #   puts "#{p.id}, #{PIVOTAL_PROJECT_ID}" if p.id == PIVOTAL_PROJECT_ID.to_i
+  #   break
+  # end
 
-  issues.each do |issue|
-    total_issues += 1
-    comments = github.issue_comments(GITHUB_REPO, issue.number)
-    puts "issue: #{issue.number} #{issue.title}, with #{comments.count} comments"
+  github = Octokit::Client.new(:login => GITHUB_LOGIN, :password => GITHUB_PASSWORD)
 
-    comments.each do |comment|
-      puts "  #{comment.body} (#{comment.user.login})"
-    end
+  issues_filter = 'bug' # update filter as appropriate
 
-    # # Create story in Pivotal Tracker
-    # story = proj.stories.create(
-    #   name: issue.title,
-    #   description: issue.body,
-    #   created_at: issue.created_at,
-    #   # labels: 'Request',
-    #   # owned_by: issue.assignee.login,
-    #   # requested_by: issue.user.login,
-    #   story_type: 'bug', # 'bug', 'feature', 'chore', 'release'. Omitting makes it a feature.
-    #   current_state: 'unstarted' # 'unstarted', 'started', 'accepted', 'delivered', 'finished', 'unscheduled'.
-    #   # Omitting puts it in the Icebox.
-    #   # 'unstarted' puts it in 'Current' if Commit Mode is on; 'Backlog' if Auto Mode is on.
-    # )
-    
-    # comments = github.issues.comments.list GITHUB_ORG, GITHUB_REPO, :issue_id => issue.number
-    # comments.each_page do |comments_page|
-    #   comments_page.each do |comment|
-    #     puts "  comment: #{comment.body}"
-    #     story.notes.create(
-    #       text: comment.body.gsub(/\r\n\r\n/, "\n\n"),
-    #       author: comment.user.login,
-    #       noted_at: comment.created_at
-    #     )
-    #   end
-    # end
+  story_type = 'bug' # 'bug', 'feature', 'chore', 'release'. Omitting makes it a feature.
 
-  end
+  story_current_state = 'unscheduled' # 'unscheduled', 'started', 'accepted', 'delivered', 'finished', 'unscheduled'.
+                                      # 'unstarted' puts it in 'Current' if Commit Mode is on; 'Backlog' if Auto Mode is on.
+                                      # Omitting puts it in the Icebox.
 
-  page_issues += 1
+  total_issues = 0 
+
+  page_issues = 1
   issues = github.list_issues(GITHUB_REPO, { :page => page_issues, :labels => issues_filter } )
 
-end
+  while issues.count > 0
 
-puts "\n== processed #{total_issues} issues"
+    issues.each do |issue|
+      total_issues += 1
+      comments = github.issue_comments(GITHUB_REPO, issue.number)
+      
+      labels = 'github-import'
+      issue.labels.each do |l|
+        labels += ",#{l.name}"
+      end
+
+      puts "issue: #{issue.number} #{issue.title}, with #{comments.count} comments"
+
+      unless dry_run
+        story = pivotal_project.stories.create(
+          :name => issue.title,
+          :description => issue.body,
+          :created_at => issue.created_at,
+          :labels => labels,
+          :story_type => story_type,     
+          :current_state => story_current_state
+        )
+
+        story.notes.create(
+          text: "Migrated from #{issue.html_url}",
+        )
+
+        comments.each do |comment|
+          story.notes.create(
+            text: comment.body.gsub(/\r\n\r\n/, "\n\n"),
+            author: comment.user.login,
+            noted_at: comment.created_at
+          )
+        end
+        
+        github.add_comment(GITHUB_REPO, issue.number, "Migrated to pivotal tracker #{story.url}")
+        github.close_issue(GITHUB_REPO, issue.number)
+      end
+    end
+
+    page_issues += 1
+    issues = github.list_issues(GITHUB_REPO, { :page => page_issues, :labels => issues_filter } )
+  end
+
+  puts "\n== processed #{total_issues} issues"
+
+rescue StandardError => se
+  puts se.message
+  exit 1
+end

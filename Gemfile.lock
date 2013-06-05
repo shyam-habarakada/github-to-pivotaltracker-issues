@@ -16,6 +16,7 @@ GEM
     mime-types (1.23)
     multi_json (1.7.6)
     multipart-post (1.2.0)
+    net-http-spy (0.2.1)
     netrc (0.7.7)
     nokogiri (1.5.9)
     nokogiri-happymapper (0.5.7)
@@ -45,5 +46,6 @@ PLATFORMS
 
 DEPENDENCIES
   json (~> 1.7.7)
+  net-http-spy
   octokit (~> 1.24.0)
   pivotal-tracker
